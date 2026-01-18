@@ -1,4 +1,4 @@
-/* script.js - Jewels-Ai Atelier: v4.4 (Text Wrap & Button Fixes) */
+/* script.js - Jewels-Ai Atelier: v4.5 (Bulletproof Visibility & Line Breaks) */
 
 /* --- CONFIGURATION --- */
 const API_KEY = "AIzaSyAXG3iG2oQjUA_BpnO8dK8y-MHJ7HLrhyE"; 
@@ -142,6 +142,7 @@ window.toggleConciergeMute = () => concierge.toggle();
 function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
 
 function getCleanName(filename) {
+    // Clean up filename for display
     return filename.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
 }
 
@@ -309,7 +310,7 @@ async function applyAssetInstantly(asset, index) {
 
     if(concierge.hasStarted) {
         let cleanName = getCleanName(asset.name);
-        concierge.speak("This is " + cleanName);
+        concierge.speak(cleanName);
     }
 }
 
@@ -327,7 +328,7 @@ function navigateJewelry(dir) {
   applyAssetInstantly(list[nextIdx], nextIdx);
 }
 
-/* --- 7. SNAPSHOT & TEXT WRAP ENGINE (FIXED) --- */
+/* --- 7. SNAPSHOT & TEXT WRAP (FIXED) --- */
 function toggleTryAll() {
     if (!currentType || !JEWELRY_ASSETS[currentType]) { 
         alert("Please wait for items to load."); 
@@ -369,7 +370,7 @@ async function runAutoStep() {
     }, 1500); 
 }
 
-// HELPER: Wraps long text into multiple lines
+// HELPER: Wraps text into multiple lines so it doesn't get cut off
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     var words = text.split(' ');
     var line = '';
@@ -408,14 +409,13 @@ function captureToGallery() {
     let cleanName = getCleanName(currentAssetName);
     cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1); 
     
-    // Dynamic Height Calculation for text box
     const padding = tempCanvas.width * 0.04; 
     const titleSize = tempCanvas.width * 0.045; 
     const descSize = tempCanvas.width * 0.035; 
     const lineHeight = descSize * 1.4;
     
-    // Estimate box height based on text length (rough calc)
-    const estimatedLines = Math.ceil(cleanName.length / 30); 
+    // Estimate box height
+    const estimatedLines = Math.ceil(cleanName.length / 25); 
     const contentHeight = (titleSize * 1.8) + (estimatedLines * lineHeight) + padding;
 
     const gradient = tempCtx.createLinearGradient(0, tempCanvas.height - contentHeight - padding, 0, tempCanvas.height); 
@@ -517,7 +517,9 @@ faceMesh.onResults((results) => {
     const ratio = distToLeft / (distToLeft + distToRight);
     const showLeft = ratio > 0.25; 
     const showRight = ratio < 0.75; 
-    if (earringImg && earringImg.complete) {
+    
+    // SAFETY CHECK: Ensure image is loaded before drawing to prevent crashes
+    if (earringImg && earringImg.complete && earringImg.naturalWidth > 0) {
       let ew = earDist * 0.25; let eh = (earringImg.height/earringImg.width) * ew;
       const xShift = ew * 0.05; 
       const totalAngle = physics.earringAngle + (physics.swayOffset * 0.5);
@@ -526,7 +528,7 @@ faceMesh.onResults((results) => {
       if (showRight) { canvasCtx.save(); canvasCtx.translate(rightEar.x, rightEar.y); canvasCtx.rotate(totalAngle); canvasCtx.drawImage(earringImg, (-ew/2) + xShift, -eh * 0.20, ew, eh); canvasCtx.restore(); }
       canvasCtx.shadowColor = "transparent";
     }
-    if (necklaceImg && necklaceImg.complete) {
+    if (necklaceImg && necklaceImg.complete && necklaceImg.naturalWidth > 0) {
       const nw = earDist * 0.85; const nh = (necklaceImg.height/necklaceImg.width) * nw;
       canvasCtx.drawImage(necklaceImg, neck.x - nw/2, neck.y + (nw*0.1), nw, nh);
     }
@@ -584,12 +586,14 @@ hands.onResults((results) => {
           handSmoother.bangle.size = lerp(handSmoother.bangle.size, targetBangleWidth, SMOOTH_FACTOR);
       }
       canvasCtx.shadowColor = "rgba(0,0,0,0.4)"; canvasCtx.shadowBlur = 10; canvasCtx.shadowOffsetY = 5;
-      if (ringImg && ringImg.complete) {
+      
+      // Safety Check Added Here Too
+      if (ringImg && ringImg.complete && ringImg.naturalWidth > 0) {
           const rHeight = (ringImg.height / ringImg.width) * handSmoother.ring.size;
           canvasCtx.save(); canvasCtx.translate(handSmoother.ring.x, handSmoother.ring.y); canvasCtx.rotate(handSmoother.ring.angle); 
           canvasCtx.drawImage(ringImg, -handSmoother.ring.size/2, (handSmoother.ring.size/0.6)*0.15, handSmoother.ring.size, rHeight); canvasCtx.restore();
       }
-      if (bangleImg && bangleImg.complete) {
+      if (bangleImg && bangleImg.complete && bangleImg.naturalWidth > 0) {
           const bHeight = (bangleImg.height / bangleImg.width) * handSmoother.bangle.size;
           canvasCtx.save(); canvasCtx.translate(handSmoother.bangle.x, handSmoother.bangle.y); canvasCtx.rotate(handSmoother.bangle.angle);
           canvasCtx.drawImage(bangleImg, -handSmoother.bangle.size/2, -bHeight/2, handSmoother.bangle.size, bHeight); canvasCtx.restore();
