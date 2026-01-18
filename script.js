@@ -1,4 +1,4 @@
-/* script.js - Jewels-Ai Atelier: v4.5 (Bulletproof Visibility & Line Breaks) */
+/* script.js - Jewels-Ai Atelier: v5.0 (Clean Core - No Voice Assistant) */
 
 /* --- CONFIGURATION --- */
 const API_KEY = "AIzaSyAXG3iG2oQjUA_BpnO8dK8y-MHJ7HLrhyE"; 
@@ -24,7 +24,6 @@ const canvasElement = document.getElementById('overlay');
 const canvasCtx = canvasElement.getContext('2d');
 const loadingStatus = document.getElementById('loading-status');
 const flashOverlay = document.getElementById('flash-overlay'); 
-const voiceBtn = document.getElementById('voice-btn'); 
 
 /* App State */
 let earringImg = null, necklaceImg = null, ringImg = null, bangleImg = null;
@@ -48,11 +47,6 @@ let physics = {
 
 /* Camera State */
 let currentCameraMode = 'user'; 
-
-/* Voice & AI State */
-let recognition = null;
-let voiceEnabled = true;
-let isRecognizing = false;
 let autoTryRunning = false;
 let autoSnapshots = [];
 let autoTryIndex = 0;
@@ -67,82 +61,10 @@ let handSmoother = {
     bangle: { x: 0, y: 0, angle: 0, size: 0 }
 };
 
-/* --- AI CONCIERGE "NILA" ENGINE --- */
-const concierge = {
-    synth: window.speechSynthesis,
-    voice: null,
-    active: true,
-    hasStarted: false, 
-    
-    init: function() {
-        if (speechSynthesis.onvoiceschanged !== undefined) {
-            speechSynthesis.onvoiceschanged = this.setVoice;
-        }
-        this.setVoice();
-        setTimeout(() => {
-            const bubble = document.getElementById('ai-bubble');
-            if(bubble) {
-                bubble.innerText = "Tap me to start Voice AI";
-                bubble.classList.add('bubble-visible');
-            }
-        }, 1000);
-    },
-
-    setVoice: function() {
-        const voices = window.speechSynthesis.getVoices();
-        concierge.voice = voices.find(v => v.name.includes("Google US English") || v.name.includes("Female")) || voices[0];
-    },
-
-    speak: function(text) {
-        if (!this.active || !this.synth) return;
-        
-        const bubble = document.getElementById('ai-bubble');
-        const avatar = document.getElementById('ai-avatar');
-        if(bubble) { bubble.innerText = text; bubble.classList.add('bubble-visible'); }
-        if(avatar) avatar.classList.add('talking');
-
-        if (this.hasStarted) {
-            this.synth.cancel();
-            const utter = new SpeechSynthesisUtterance(text);
-            utter.voice = this.voice;
-            utter.rate = 1.0; 
-            utter.pitch = 1.1;
-            utter.onend = () => {
-                if(bubble) setTimeout(() => bubble.classList.remove('bubble-visible'), 2000);
-                if(avatar) avatar.classList.remove('talking');
-            };
-            this.synth.speak(utter);
-        } else {
-            setTimeout(() => {
-                 if(avatar) avatar.classList.remove('talking');
-                 if(bubble) bubble.classList.remove('bubble-visible');
-            }, 3000);
-        }
-    },
-
-    toggle: function() {
-        if (!this.hasStarted) {
-            this.hasStarted = true;
-            this.speak("Namaste! I am Nila. I am now active.");
-            return;
-        }
-        this.active = !this.active;
-        if(this.active) this.speak("I am listening.");
-        else { 
-            this.synth.cancel(); 
-            const bubble = document.getElementById('ai-bubble');
-            if(bubble) bubble.innerText = "Muted"; 
-        }
-    }
-};
-
-window.toggleConciergeMute = () => concierge.toggle();
-
-/* --- HELPER: LERP & CLEAN NAME --- */
+/* --- HELPER FUNCTIONS --- */
 function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
 
 function getCleanName(filename) {
-    // Clean up filename for display
     return filename.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
 }
 
@@ -162,7 +84,6 @@ function checkDailyDrop() {
         document.getElementById('daily-drop-modal').style.display = 'flex';
         
         localStorage.setItem('jewels_daily_date', today);
-        concierge.speak("Today's special is the " + cleanName);
     }
 }
 
@@ -257,7 +178,6 @@ function setActiveARImage(img) {
 /* --- 5. INITIALIZATION --- */
 window.onload = async () => {
     initBackgroundFetch();
-    concierge.init(); 
     await startCameraFast('user');
     setTimeout(() => { loadingStatus.style.display = 'none'; }, 2000);
     await selectJewelryType('earrings');
@@ -267,12 +187,6 @@ window.onload = async () => {
 async function selectJewelryType(type) {
   if (currentType === type) return;
   currentType = type;
-  
-  if(concierge.hasStarted) {
-      if(type === 'earrings') concierge.speak("Earrings mode.");
-      else if(type === 'chains') concierge.speak("Necklace mode.");
-      else if(type === 'rings') concierge.speak("Ring mode.");
-  }
   
   const targetMode = (type === 'rings' || type === 'bangles') ? 'environment' : 'user';
   startCameraFast(targetMode); 
@@ -304,14 +218,15 @@ async function applyAssetInstantly(asset, index) {
     
     highlightButtonByIndex(index);
     
-    const thumbImg = new Image(); thumbImg.src = asset.thumbSrc; thumbImg.crossOrigin = 'anonymous'; setActiveARImage(thumbImg);
+    // Load Thumbnail (Instant)
+    const thumbImg = new Image(); 
+    thumbImg.src = asset.thumbSrc; 
+    thumbImg.crossOrigin = 'anonymous'; 
+    setActiveARImage(thumbImg);
+
+    // Load High Res (Async)
     const highResImg = await loadAsset(asset.fullSrc, asset.id);
     if (currentAssetName === asset.name && highResImg) setActiveARImage(highResImg);
-
-    if(concierge.hasStarted) {
-        let cleanName = getCleanName(asset.name);
-        concierge.speak(cleanName);
-    }
 }
 
 function highlightButtonByIndex(index) {
@@ -328,7 +243,7 @@ function navigateJewelry(dir) {
   applyAssetInstantly(list[nextIdx], nextIdx);
 }
 
-/* --- 7. SNAPSHOT & TEXT WRAP (FIXED) --- */
+/* --- 7. SNAPSHOT & TEXT WRAP --- */
 function toggleTryAll() {
     if (!currentType || !JEWELRY_ASSETS[currentType]) { 
         alert("Please wait for items to load."); 
@@ -370,7 +285,6 @@ async function runAutoStep() {
     }, 1500); 
 }
 
-// HELPER: Wraps text into multiple lines so it doesn't get cut off
 function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
     var words = text.split(' ');
     var line = '';
@@ -389,7 +303,7 @@ function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
         }
     }
     ctx.fillText(line, x, y);
-    return y; // Return last Y position
+    return y; 
 }
 
 function captureToGallery() { 
@@ -405,7 +319,6 @@ function captureToGallery() {
     tempCtx.setTransform(1, 0, 0, 1, 0, 0); 
     try { tempCtx.drawImage(canvasElement, 0, 0); } catch(e) {} 
 
-    // Create Title & Desc
     let cleanName = getCleanName(currentAssetName);
     cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1); 
     
@@ -414,7 +327,6 @@ function captureToGallery() {
     const descSize = tempCanvas.width * 0.035; 
     const lineHeight = descSize * 1.4;
     
-    // Estimate box height
     const estimatedLines = Math.ceil(cleanName.length / 25); 
     const contentHeight = (titleSize * 1.8) + (estimatedLines * lineHeight) + padding;
 
@@ -431,11 +343,9 @@ function captureToGallery() {
     tempCtx.textAlign = "left"; 
     tempCtx.textBaseline = "top"; 
     
-    // Draw Title
     const titleY = tempCanvas.height - contentHeight;
     tempCtx.fillText("Product Description", padding, titleY); 
 
-    // Draw Description with Word Wrap
     tempCtx.font = `${descSize}px Montserrat, sans-serif`; 
     tempCtx.fillStyle = "#ffffff"; 
     wrapText(tempCtx, cleanName, padding, titleY + (titleSize * 1.5), tempCanvas.width - (padding*2), lineHeight);
@@ -458,7 +368,6 @@ function takeSnapshot() {
     currentPreviewData = shotData; 
     document.getElementById('preview-image').src = shotData.url; 
     document.getElementById('preview-modal').style.display = 'flex'; 
-    if(concierge.hasStarted) concierge.speak("Captured perfectly!"); 
 }
 
 /* --- EXPORTS --- */
@@ -472,8 +381,6 @@ window.closePreview = closePreview;
 window.downloadSingleSnapshot = downloadSingleSnapshot; 
 window.shareSingleSnapshot = shareSingleSnapshot;
 window.changeLightboxImage = changeLightboxImage; 
-window.toggleVoiceControl = toggleVoiceControl;
-window.initVoiceControl = initVoiceControl;
 
 /* --- TRACKING LOOPS --- */
 async function startCameraFast(mode = 'user') {
@@ -484,7 +391,7 @@ async function startCameraFast(mode = 'user') {
     try {
         const stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: mode } });
         videoElement.srcObject = stream;
-        videoElement.onloadeddata = () => { videoElement.play(); detectLoop(); if(!recognition) initVoiceControl(); };
+        videoElement.onloadeddata = () => { videoElement.play(); detectLoop(); };
     } catch (err) { alert("Camera Error: " + err.message); }
 }
 
@@ -518,7 +425,7 @@ faceMesh.onResults((results) => {
     const showLeft = ratio > 0.25; 
     const showRight = ratio < 0.75; 
     
-    // SAFETY CHECK: Ensure image is loaded before drawing to prevent crashes
+    // SAFETY CHECK: Ensure image is loaded before drawing
     if (earringImg && earringImg.complete && earringImg.naturalWidth > 0) {
       let ew = earDist * 0.25; let eh = (earringImg.height/earringImg.width) * ew;
       const xShift = ew * 0.05; 
@@ -550,7 +457,6 @@ hands.onResults((results) => {
               const diff = indexTipX - previousHandX;
               if (Math.abs(diff) > 0.04) { 
                   navigateJewelry(diff < 0 ? 1 : -1); 
-                  triggerVisualFeedback(diff < 0 ? "Next" : "Previous");
                   lastGestureTime = Date.now(); 
                   previousHandX = null; 
               }
@@ -587,7 +493,7 @@ hands.onResults((results) => {
       }
       canvasCtx.shadowColor = "rgba(0,0,0,0.4)"; canvasCtx.shadowBlur = 10; canvasCtx.shadowOffsetY = 5;
       
-      // Safety Check Added Here Too
+      // Safety Check
       if (ringImg && ringImg.complete && ringImg.naturalWidth > 0) {
           const rHeight = (ringImg.height / ringImg.width) * handSmoother.ring.size;
           canvasCtx.save(); canvasCtx.translate(handSmoother.ring.x, handSmoother.ring.y); canvasCtx.rotate(handSmoother.ring.angle); 
