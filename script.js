@@ -1,4 +1,4 @@
-/* script.js - Jewels-Ai Atelier: v4.3 (Product Name Announcer) */
+/* script.js - Jewels-Ai Atelier: v4.4 (Text Wrap & Button Fixes) */
 
 /* --- CONFIGURATION --- */
 const API_KEY = "AIzaSyAXG3iG2oQjUA_BpnO8dK8y-MHJ7HLrhyE"; 
@@ -142,7 +142,6 @@ window.toggleConciergeMute = () => concierge.toggle();
 function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
 
 function getCleanName(filename) {
-    // Removes .png/.jpg and replaces underscores/dashes with spaces
     return filename.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
 }
 
@@ -269,9 +268,9 @@ async function selectJewelryType(type) {
   currentType = type;
   
   if(concierge.hasStarted) {
-      if(type === 'earrings') concierge.speak("Earrings mode. Try moving your head.");
-      else if(type === 'chains') concierge.speak("Necklaces loaded.");
-      else if(type === 'rings') concierge.speak("Ring mode. Show your hand.");
+      if(type === 'earrings') concierge.speak("Earrings mode.");
+      else if(type === 'chains') concierge.speak("Necklace mode.");
+      else if(type === 'rings') concierge.speak("Ring mode.");
   }
   
   const targetMode = (type === 'rings' || type === 'bangles') ? 'environment' : 'user';
@@ -298,23 +297,19 @@ async function selectJewelryType(type) {
   applyAssetInstantly(assets[0], 0);
 }
 
-// *** THIS IS THE NEW PART THAT READS THE NAME ***
 async function applyAssetInstantly(asset, index) {
     currentAssetIndex = index; 
     currentAssetName = asset.name; 
     
-    // 1. Highlight UI
     highlightButtonByIndex(index);
     
-    // 2. Load Images (Low Res -> High Res)
     const thumbImg = new Image(); thumbImg.src = asset.thumbSrc; thumbImg.crossOrigin = 'anonymous'; setActiveARImage(thumbImg);
     const highResImg = await loadAsset(asset.fullSrc, asset.id);
     if (currentAssetName === asset.name && highResImg) setActiveARImage(highResImg);
 
-    // 3. NILA SPEAKS THE NAME
     if(concierge.hasStarted) {
         let cleanName = getCleanName(asset.name);
-        concierge.speak("This is the " + cleanName);
+        concierge.speak("This is " + cleanName);
     }
 }
 
@@ -332,7 +327,155 @@ function navigateJewelry(dir) {
   applyAssetInstantly(list[nextIdx], nextIdx);
 }
 
-/* --- 7. CAMERA & AI LOOP --- */
+/* --- 7. SNAPSHOT & TEXT WRAP ENGINE (FIXED) --- */
+function toggleTryAll() {
+    if (!currentType || !JEWELRY_ASSETS[currentType]) { 
+        alert("Please wait for items to load."); 
+        return; 
+    }
+    if (autoTryRunning) stopAutoTry(); else startAutoTry();
+}
+
+function startAutoTry() { 
+    autoTryRunning = true; 
+    autoSnapshots = []; 
+    autoTryIndex = 0; 
+    document.getElementById('tryall-btn').textContent = "STOP"; 
+    runAutoStep(); 
+}
+
+function stopAutoTry() { 
+    autoTryRunning = false; 
+    clearTimeout(autoTryTimeout); 
+    document.getElementById('tryall-btn').textContent = "Try All"; 
+    if (autoSnapshots.length > 0) showGallery(); 
+}
+
+async function runAutoStep() { 
+    if (!autoTryRunning) return; 
+    const assets = JEWELRY_ASSETS[currentType]; 
+    if (!assets || autoTryIndex >= assets.length) { stopAutoTry(); return; } 
+    
+    const asset = assets[autoTryIndex]; 
+    const highResImg = await loadAsset(asset.fullSrc, asset.id); 
+    setActiveARImage(highResImg); 
+    currentAssetName = asset.name; 
+    
+    autoTryTimeout = setTimeout(() => { 
+        triggerFlash(); 
+        captureToGallery(); 
+        autoTryIndex++; 
+        runAutoStep(); 
+    }, 1500); 
+}
+
+// HELPER: Wraps long text into multiple lines
+function wrapText(ctx, text, x, y, maxWidth, lineHeight) {
+    var words = text.split(' ');
+    var line = '';
+
+    for(var n = 0; n < words.length; n++) {
+        var testLine = line + words[n] + ' ';
+        var metrics = ctx.measureText(testLine);
+        var testWidth = metrics.width;
+        if (testWidth > maxWidth && n > 0) {
+            ctx.fillText(line, x, y);
+            line = words[n] + ' ';
+            y += lineHeight;
+        }
+        else {
+            line = testLine;
+        }
+    }
+    ctx.fillText(line, x, y);
+    return y; // Return last Y position
+}
+
+function captureToGallery() { 
+    const tempCanvas = document.createElement('canvas'); 
+    tempCanvas.width = videoElement.videoWidth; 
+    tempCanvas.height = videoElement.videoHeight; 
+    const tempCtx = tempCanvas.getContext('2d'); 
+
+    if (currentCameraMode === 'environment') { tempCtx.translate(0, 0); tempCtx.scale(1, 1); } 
+    else { tempCtx.translate(tempCanvas.width, 0); tempCtx.scale(-1, 1); } 
+    
+    tempCtx.drawImage(videoElement, 0, 0); 
+    tempCtx.setTransform(1, 0, 0, 1, 0, 0); 
+    try { tempCtx.drawImage(canvasElement, 0, 0); } catch(e) {} 
+
+    // Create Title & Desc
+    let cleanName = getCleanName(currentAssetName);
+    cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1); 
+    
+    // Dynamic Height Calculation for text box
+    const padding = tempCanvas.width * 0.04; 
+    const titleSize = tempCanvas.width * 0.045; 
+    const descSize = tempCanvas.width * 0.035; 
+    const lineHeight = descSize * 1.4;
+    
+    // Estimate box height based on text length (rough calc)
+    const estimatedLines = Math.ceil(cleanName.length / 30); 
+    const contentHeight = (titleSize * 1.8) + (estimatedLines * lineHeight) + padding;
+
+    const gradient = tempCtx.createLinearGradient(0, tempCanvas.height - contentHeight - padding, 0, tempCanvas.height); 
+    gradient.addColorStop(0, "rgba(0,0,0,0)"); 
+    gradient.addColorStop(0.2, "rgba(0,0,0,0.8)"); 
+    gradient.addColorStop(1, "rgba(0,0,0,0.95)"); 
+    
+    tempCtx.fillStyle = gradient; 
+    tempCtx.fillRect(0, tempCanvas.height - contentHeight - padding, tempCanvas.width, contentHeight + padding); 
+
+    tempCtx.font = `bold ${titleSize}px Playfair Display, serif`; 
+    tempCtx.fillStyle = "#d4af37"; 
+    tempCtx.textAlign = "left"; 
+    tempCtx.textBaseline = "top"; 
+    
+    // Draw Title
+    const titleY = tempCanvas.height - contentHeight;
+    tempCtx.fillText("Product Description", padding, titleY); 
+
+    // Draw Description with Word Wrap
+    tempCtx.font = `${descSize}px Montserrat, sans-serif`; 
+    tempCtx.fillStyle = "#ffffff"; 
+    wrapText(tempCtx, cleanName, padding, titleY + (titleSize * 1.5), tempCanvas.width - (padding*2), lineHeight);
+
+    if (watermarkImg.complete) { 
+        const wWidth = tempCanvas.width * 0.25; 
+        const wHeight = (watermarkImg.height / watermarkImg.width) * wWidth; 
+        tempCtx.drawImage(watermarkImg, tempCanvas.width - wWidth - padding, padding, wWidth, wHeight); 
+    } 
+    
+    const dataUrl = tempCanvas.toDataURL('image/png'); 
+    const safeName = "Jewels_Look"; 
+    autoSnapshots.push({ url: dataUrl, name: `${safeName}_${Date.now()}.png` }); 
+    return { url: dataUrl, name: `${safeName}_${Date.now()}.png` }; 
+}
+
+function takeSnapshot() { 
+    triggerFlash(); 
+    const shotData = captureToGallery(); 
+    currentPreviewData = shotData; 
+    document.getElementById('preview-image').src = shotData.url; 
+    document.getElementById('preview-modal').style.display = 'flex'; 
+    if(concierge.hasStarted) concierge.speak("Captured perfectly!"); 
+}
+
+/* --- EXPORTS --- */
+window.selectJewelryType = selectJewelryType; 
+window.toggleTryAll = toggleTryAll; 
+window.tryDailyItem = tryDailyItem; 
+window.closeDailyDrop = closeDailyDrop;
+window.takeSnapshot = takeSnapshot; 
+window.downloadAllAsZip = downloadAllAsZip; 
+window.closePreview = closePreview;
+window.downloadSingleSnapshot = downloadSingleSnapshot; 
+window.shareSingleSnapshot = shareSingleSnapshot;
+window.changeLightboxImage = changeLightboxImage; 
+window.toggleVoiceControl = toggleVoiceControl;
+window.initVoiceControl = initVoiceControl;
+
+/* --- TRACKING LOOPS --- */
 async function startCameraFast(mode = 'user') {
     if (videoElement.srcObject && currentCameraMode === mode && videoElement.readyState >= 2) return;
     currentCameraMode = mode;
@@ -353,10 +496,8 @@ async function detectLoop() {
     requestAnimationFrame(detectLoop);
 }
 
-/* --- 8. MEDIAPIPE FACE --- */
 const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
 faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
-
 faceMesh.onResults((results) => {
   if (currentType !== 'earrings' && currentType !== 'chains') return;
   const w = videoElement.videoWidth; const h = videoElement.videoHeight;
@@ -364,7 +505,6 @@ faceMesh.onResults((results) => {
   canvasCtx.save(); canvasCtx.clearRect(0, 0, w, h);
   if (currentCameraMode === 'environment') { canvasCtx.translate(0, 0); canvasCtx.scale(1, 1); } 
   else { canvasCtx.translate(w, 0); canvasCtx.scale(-1, 1); }
-
   if (results.multiFaceLandmarks && results.multiFaceLandmarks[0]) {
     const lm = results.multiFaceLandmarks[0]; 
     const leftEar = { x: lm[132].x * w, y: lm[132].y * h }; const rightEar = { x: lm[361].x * w, y: lm[361].y * h };
@@ -377,7 +517,6 @@ faceMesh.onResults((results) => {
     const ratio = distToLeft / (distToLeft + distToRight);
     const showLeft = ratio > 0.25; 
     const showRight = ratio < 0.75; 
-
     if (earringImg && earringImg.complete) {
       let ew = earDist * 0.25; let eh = (earringImg.height/earringImg.width) * ew;
       const xShift = ew * 0.05; 
@@ -395,11 +534,9 @@ faceMesh.onResults((results) => {
   canvasCtx.restore();
 });
 
-/* --- 9. MEDIAPIPE HANDS --- */
 const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 function calculateAngle(p1, p2) { return Math.atan2(p2.y - p1.y, p2.x - p1.x); }
-
 hands.onResults((results) => {
   const w = videoElement.videoWidth; 
   const h = videoElement.videoHeight;
@@ -419,13 +556,11 @@ hands.onResults((results) => {
           if (Date.now() - lastGestureTime > 100) previousHandX = indexTipX;
       }
   } else { previousHandX = null; handSmoother.active = false; }
-
   if (currentType !== 'rings' && currentType !== 'bangles') return;
   canvasElement.width = w; canvasElement.height = h;
   canvasCtx.save(); canvasCtx.clearRect(0, 0, w, h);
   if (currentCameraMode === 'environment') { canvasCtx.translate(0, 0); canvasCtx.scale(1, 1); } 
   else { canvasCtx.translate(w, 0); canvasCtx.scale(-1, 1); }
-
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       const lm = results.multiHandLandmarks[0];
       const mcp = { x: lm[13].x * w, y: lm[13].y * h }; const pip = { x: lm[14].x * w, y: lm[14].y * h };
@@ -434,7 +569,6 @@ hands.onResults((results) => {
       const wrist = { x: lm[0].x * w, y: lm[0].y * h }; 
       const targetArmAngle = calculateAngle(wrist, { x: lm[9].x * w, y: lm[9].y * h }) - (Math.PI / 2);
       const targetBangleWidth = Math.hypot((lm[17].x*w)-(lm[5].x*w), (lm[17].y*h)-(lm[5].y*h)) * 1.25; 
-
       if (!handSmoother.active) {
           handSmoother.ring = { x: mcp.x, y: mcp.y, angle: targetRingAngle, size: targetRingWidth };
           handSmoother.bangle = { x: wrist.x, y: wrist.y, angle: targetArmAngle, size: targetBangleWidth };
@@ -464,9 +598,3 @@ hands.onResults((results) => {
   }
   canvasCtx.restore();
 });
-
-/* --- EXPORTS --- */
-window.selectJewelryType = selectJewelryType; window.toggleTryAll = toggleTryAll; window.tryDailyItem = tryDailyItem; window.closeDailyDrop = closeDailyDrop;
-window.takeSnapshot = takeSnapshot; window.downloadAllAsZip = downloadAllAsZip; window.closePreview = closePreview;
-window.downloadSingleSnapshot = downloadSingleSnapshot; window.shareSingleSnapshot = shareSingleSnapshot;
-window.changeLightboxImage = changeLightboxImage; window.toggleVoiceControl = toggleVoiceControl; window.initVoiceControl = initVoiceControl;
