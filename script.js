@@ -1,4 +1,4 @@
-/* script.js - Jewels-Ai Atelier: v4.2 (Fixed Nila Voice & Full Features) */
+/* script.js - Jewels-Ai Atelier: v4.3 (Product Name Announcer) */
 
 /* --- CONFIGURATION --- */
 const API_KEY = "AIzaSyAXG3iG2oQjUA_BpnO8dK8y-MHJ7HLrhyE"; 
@@ -67,20 +67,18 @@ let handSmoother = {
     bangle: { x: 0, y: 0, angle: 0, size: 0 }
 };
 
-/* --- AI CONCIERGE "NILA" ENGINE (FIXED) --- */
+/* --- AI CONCIERGE "NILA" ENGINE --- */
 const concierge = {
     synth: window.speechSynthesis,
     voice: null,
     active: true,
-    hasStarted: false, // Prevents auto-play errors
+    hasStarted: false, 
     
     init: function() {
         if (speechSynthesis.onvoiceschanged !== undefined) {
             speechSynthesis.onvoiceschanged = this.setVoice;
         }
         this.setVoice();
-        
-        // Show visual cue only, don't speak yet
         setTimeout(() => {
             const bubble = document.getElementById('ai-bubble');
             if(bubble) {
@@ -98,13 +96,11 @@ const concierge = {
     speak: function(text) {
         if (!this.active || !this.synth) return;
         
-        // Visuals (Always work)
         const bubble = document.getElementById('ai-bubble');
         const avatar = document.getElementById('ai-avatar');
         if(bubble) { bubble.innerText = text; bubble.classList.add('bubble-visible'); }
         if(avatar) avatar.classList.add('talking');
 
-        // Audio (Only works after user interaction)
         if (this.hasStarted) {
             this.synth.cancel();
             const utter = new SpeechSynthesisUtterance(text);
@@ -117,7 +113,6 @@ const concierge = {
             };
             this.synth.speak(utter);
         } else {
-            // If sound blocked, stop animation after 3s
             setTimeout(() => {
                  if(avatar) avatar.classList.remove('talking');
                  if(bubble) bubble.classList.remove('bubble-visible');
@@ -126,13 +121,11 @@ const concierge = {
     },
 
     toggle: function() {
-        // First click unlocks audio
         if (!this.hasStarted) {
             this.hasStarted = true;
-            this.speak("Namaste! I am Nila. I am now active. Select a jewelry category.");
+            this.speak("Namaste! I am Nila. I am now active.");
             return;
         }
-
         this.active = !this.active;
         if(this.active) this.speak("I am listening.");
         else { 
@@ -145,8 +138,13 @@ const concierge = {
 
 window.toggleConciergeMute = () => concierge.toggle();
 
-/* --- HELPER: LERP --- */
+/* --- HELPER: LERP & CLEAN NAME --- */
 function lerp(start, end, amt) { return (1 - amt) * start + amt * end; }
+
+function getCleanName(filename) {
+    // Removes .png/.jpg and replaces underscores/dashes with spaces
+    return filename.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
+}
 
 /* --- 1. DAILY DROP FEATURE --- */
 function checkDailyDrop() {
@@ -159,12 +157,12 @@ function checkDailyDrop() {
         dailyItem = { item: list[randomIdx], index: randomIdx, type: 'earrings' };
         
         document.getElementById('daily-img').src = dailyItem.item.thumbSrc;
-        let cleanName = dailyItem.item.name.replace(/\.[^/.]+$/, "").replace(/_/g, " ");
+        let cleanName = getCleanName(dailyItem.item.name);
         document.getElementById('daily-name').innerText = cleanName;
         document.getElementById('daily-drop-modal').style.display = 'flex';
         
         localStorage.setItem('jewels_daily_date', today);
-        concierge.speak("I found a special daily drop for you!");
+        concierge.speak("Today's special is the " + cleanName);
     }
 }
 
@@ -175,12 +173,11 @@ function tryDailyItem() {
     if (dailyItem) {
         selectJewelryType(dailyItem.type).then(() => {
             applyAssetInstantly(dailyItem.item, dailyItem.index);
-            concierge.speak("Excellent choice. This is trending right now.");
         });
     }
 }
 
-/* --- 2. PHYSICS ENGINE (JHUMKA SWING) --- */
+/* --- 2. PHYSICS ENGINE --- */
 function updatePhysics(headTilt, headX, width) {
     const gravityTarget = -headTilt; 
     physics.earringVelocity += (gravityTarget - physics.earringAngle) * 0.1; 
@@ -189,7 +186,6 @@ function updatePhysics(headTilt, headX, width) {
 
     const headSpeed = (headX - physics.lastHeadX); 
     physics.lastHeadX = headX;
-
     physics.swayOffset += headSpeed * -1.5; 
     physics.swayOffset *= 0.85; 
     if (physics.swayOffset > 0.5) physics.swayOffset = 0.5;
@@ -261,7 +257,7 @@ function setActiveARImage(img) {
 /* --- 5. INITIALIZATION --- */
 window.onload = async () => {
     initBackgroundFetch();
-    concierge.init(); // WAKE UP NILA
+    concierge.init(); 
     await startCameraFast('user');
     setTimeout(() => { loadingStatus.style.display = 'none'; }, 2000);
     await selectJewelryType('earrings');
@@ -273,9 +269,9 @@ async function selectJewelryType(type) {
   currentType = type;
   
   if(concierge.hasStarted) {
-      if(type === 'earrings') concierge.speak("Earrings mode. Turn your head to see them swing.");
-      else if(type === 'chains') concierge.speak("Necklace mode. This looks elegant.");
-      else if(type === 'rings') concierge.speak("Ring mode. Show me your hand.");
+      if(type === 'earrings') concierge.speak("Earrings mode. Try moving your head.");
+      else if(type === 'chains') concierge.speak("Necklaces loaded.");
+      else if(type === 'rings') concierge.speak("Ring mode. Show your hand.");
   }
   
   const targetMode = (type === 'rings' || type === 'bangles') ? 'environment' : 'user';
@@ -302,11 +298,24 @@ async function selectJewelryType(type) {
   applyAssetInstantly(assets[0], 0);
 }
 
+// *** THIS IS THE NEW PART THAT READS THE NAME ***
 async function applyAssetInstantly(asset, index) {
-    currentAssetIndex = index; currentAssetName = asset.name; highlightButtonByIndex(index);
+    currentAssetIndex = index; 
+    currentAssetName = asset.name; 
+    
+    // 1. Highlight UI
+    highlightButtonByIndex(index);
+    
+    // 2. Load Images (Low Res -> High Res)
     const thumbImg = new Image(); thumbImg.src = asset.thumbSrc; thumbImg.crossOrigin = 'anonymous'; setActiveARImage(thumbImg);
     const highResImg = await loadAsset(asset.fullSrc, asset.id);
     if (currentAssetName === asset.name && highResImg) setActiveARImage(highResImg);
+
+    // 3. NILA SPEAKS THE NAME
+    if(concierge.hasStarted) {
+        let cleanName = getCleanName(asset.name);
+        concierge.speak("This is the " + cleanName);
+    }
 }
 
 function highlightButtonByIndex(index) {
@@ -350,11 +359,9 @@ faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTra
 
 faceMesh.onResults((results) => {
   if (currentType !== 'earrings' && currentType !== 'chains') return;
-
   const w = videoElement.videoWidth; const h = videoElement.videoHeight;
   canvasElement.width = w; canvasElement.height = h;
   canvasCtx.save(); canvasCtx.clearRect(0, 0, w, h);
-  
   if (currentCameraMode === 'environment') { canvasCtx.translate(0, 0); canvasCtx.scale(1, 1); } 
   else { canvasCtx.translate(w, 0); canvasCtx.scale(-1, 1); }
 
@@ -362,16 +369,12 @@ faceMesh.onResults((results) => {
     const lm = results.multiFaceLandmarks[0]; 
     const leftEar = { x: lm[132].x * w, y: lm[132].y * h }; const rightEar = { x: lm[361].x * w, y: lm[361].y * h };
     const neck = { x: lm[152].x * w, y: lm[152].y * h }; const nose = { x: lm[1].x * w, y: lm[1].y * h };
-
     const headTilt = Math.atan2(rightEar.y - leftEar.y, rightEar.x - leftEar.x);
     updatePhysics(headTilt, lm[1].x, w);
-
     const earDist = Math.hypot(rightEar.x - leftEar.x, rightEar.y - leftEar.y);
     const distToLeft = Math.hypot(nose.x - leftEar.x, nose.y - leftEar.y);
     const distToRight = Math.hypot(nose.x - rightEar.x, nose.y - rightEar.y);
     const ratio = distToLeft / (distToLeft + distToRight);
-    
-    // Smart Occlusion
     const showLeft = ratio > 0.25; 
     const showRight = ratio < 0.75; 
 
@@ -379,24 +382,11 @@ faceMesh.onResults((results) => {
       let ew = earDist * 0.25; let eh = (earringImg.height/earringImg.width) * ew;
       const xShift = ew * 0.05; 
       const totalAngle = physics.earringAngle + (physics.swayOffset * 0.5);
-
-      // Soft Shadows
-      canvasCtx.shadowColor = "rgba(0,0,0,0.5)"; 
-      canvasCtx.shadowBlur = 15; 
-      canvasCtx.shadowOffsetX = 2; 
-      canvasCtx.shadowOffsetY = 5;
-
-      if (showLeft) { 
-          canvasCtx.save(); canvasCtx.translate(leftEar.x, leftEar.y); canvasCtx.rotate(totalAngle); 
-          canvasCtx.drawImage(earringImg, (-ew/2) - xShift, -eh * 0.20, ew, eh); canvasCtx.restore(); 
-      }
-      if (showRight) { 
-          canvasCtx.save(); canvasCtx.translate(rightEar.x, rightEar.y); canvasCtx.rotate(totalAngle); 
-          canvasCtx.drawImage(earringImg, (-ew/2) + xShift, -eh * 0.20, ew, eh); canvasCtx.restore(); 
-      }
+      canvasCtx.shadowColor = "rgba(0,0,0,0.5)"; canvasCtx.shadowBlur = 15; canvasCtx.shadowOffsetX = 2; canvasCtx.shadowOffsetY = 5;
+      if (showLeft) { canvasCtx.save(); canvasCtx.translate(leftEar.x, leftEar.y); canvasCtx.rotate(totalAngle); canvasCtx.drawImage(earringImg, (-ew/2) - xShift, -eh * 0.20, ew, eh); canvasCtx.restore(); }
+      if (showRight) { canvasCtx.save(); canvasCtx.translate(rightEar.x, rightEar.y); canvasCtx.rotate(totalAngle); canvasCtx.drawImage(earringImg, (-ew/2) + xShift, -eh * 0.20, ew, eh); canvasCtx.restore(); }
       canvasCtx.shadowColor = "transparent";
     }
-    
     if (necklaceImg && necklaceImg.complete) {
       const nw = earDist * 0.85; const nh = (necklaceImg.height/necklaceImg.width) * nw;
       canvasCtx.drawImage(necklaceImg, neck.x - nw/2, neck.y + (nw*0.1), nw, nh);
@@ -413,12 +403,9 @@ function calculateAngle(p1, p2) { return Math.atan2(p2.y - p1.y, p2.x - p1.x); }
 hands.onResults((results) => {
   const w = videoElement.videoWidth; 
   const h = videoElement.videoHeight;
-  
-  // 1. GLOBAL GESTURE TRACKING
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       const lm = results.multiHandLandmarks[0];
       const indexTipX = lm[8].x; 
-
       if (!autoTryRunning && (Date.now() - lastGestureTime > GESTURE_COOLDOWN)) {
           if (previousHandX !== null) {
               const diff = indexTipX - previousHandX;
@@ -431,14 +418,9 @@ hands.onResults((results) => {
           }
           if (Date.now() - lastGestureTime > 100) previousHandX = indexTipX;
       }
-  } else { 
-      previousHandX = null; 
-      handSmoother.active = false; 
-  }
+  } else { previousHandX = null; handSmoother.active = false; }
 
-  // 2. VISUAL DRAWING
   if (currentType !== 'rings' && currentType !== 'bangles') return;
-
   canvasElement.width = w; canvasElement.height = h;
   canvasCtx.save(); canvasCtx.clearRect(0, 0, w, h);
   if (currentCameraMode === 'environment') { canvasCtx.translate(0, 0); canvasCtx.scale(1, 1); } 
@@ -467,12 +449,7 @@ hands.onResults((results) => {
           handSmoother.bangle.angle = lerp(handSmoother.bangle.angle, targetArmAngle, SMOOTH_FACTOR);
           handSmoother.bangle.size = lerp(handSmoother.bangle.size, targetBangleWidth, SMOOTH_FACTOR);
       }
-
-      // Add Shadow for Hand Items
-      canvasCtx.shadowColor = "rgba(0,0,0,0.4)"; 
-      canvasCtx.shadowBlur = 10; 
-      canvasCtx.shadowOffsetY = 5;
-
+      canvasCtx.shadowColor = "rgba(0,0,0,0.4)"; canvasCtx.shadowBlur = 10; canvasCtx.shadowOffsetY = 5;
       if (ringImg && ringImg.complete) {
           const rHeight = (ringImg.height / ringImg.width) * handSmoother.ring.size;
           canvasCtx.save(); canvasCtx.translate(handSmoother.ring.x, handSmoother.ring.y); canvasCtx.rotate(handSmoother.ring.angle); 
@@ -489,44 +466,7 @@ hands.onResults((results) => {
 });
 
 /* --- EXPORTS --- */
-window.selectJewelryType = selectJewelryType; 
-window.toggleTryAll = toggleTryAll; 
-window.tryDailyItem = tryDailyItem; 
-window.closeDailyDrop = closeDailyDrop;
-window.takeSnapshot = takeSnapshot; 
-window.downloadAllAsZip = downloadAllAsZip; 
-window.closePreview = closePreview;
-window.downloadSingleSnapshot = downloadSingleSnapshot; 
-window.shareSingleSnapshot = shareSingleSnapshot;
-window.changeLightboxImage = changeLightboxImage; 
-window.toggleVoiceControl = toggleVoiceControl;
-window.initVoiceControl = initVoiceControl;
-
-// Helper Functions
-function initVoiceControl() {
-    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognition) { if(voiceBtn) voiceBtn.style.display = 'none'; return; }
-    recognition = new SpeechRecognition(); recognition.continuous = true; recognition.interimResults = false; recognition.lang = 'en-US';
-    recognition.onstart = () => { isRecognizing = true; if(voiceBtn) { voiceBtn.style.backgroundColor = "rgba(0, 255, 0, 0.2)"; voiceBtn.style.borderColor = "#00ff00"; } };
-    recognition.onresult = (event) => { if (event.results[event.results.length - 1].isFinal) processVoiceCommand(event.results[event.results.length - 1][0].transcript.trim().toLowerCase()); };
-    recognition.onend = () => { isRecognizing = false; if (voiceEnabled) setTimeout(() => { try { recognition.start(); } catch(e) {} }, 500); else if(voiceBtn) { voiceBtn.style.backgroundColor = "rgba(0,0,0,0.5)"; voiceBtn.style.borderColor = "white"; } };
-    try { recognition.start(); } catch(e) {}
-}
-function toggleVoiceControl() { if (!recognition) { initVoiceControl(); return; } voiceEnabled = !voiceEnabled; if (!voiceEnabled) { recognition.stop(); if(voiceBtn) { voiceBtn.innerHTML = '🔇'; voiceBtn.classList.add('voice-off'); } } else { try { recognition.start(); } catch(e) {} if(voiceBtn) { voiceBtn.innerHTML = '🎙️'; voiceBtn.classList.remove('voice-off'); } } }
-function processVoiceCommand(cmd) { cmd = cmd.replace(/[.,\/#!$%\^&\*;:{}=\-_`~()]/g,""); if (cmd.includes('next') || cmd.includes('change')) { navigateJewelry(1); triggerVisualFeedback("Next"); } else if (cmd.includes('back') || cmd.includes('previous')) { navigateJewelry(-1); triggerVisualFeedback("Previous"); } else if (cmd.includes('photo') || cmd.includes('capture')) takeSnapshot(); else if (cmd.includes('earring')) selectJewelryType('earrings'); else if (cmd.includes('chain') || cmd.includes('neck')) selectJewelryType('chains'); else if (cmd.includes('ring')) selectJewelryType('rings'); else if (cmd.includes('bangle')) selectJewelryType('bangles'); }
-function triggerVisualFeedback(text) { const feedback = document.createElement('div'); feedback.innerText = text; feedback.style.cssText = 'position:fixed; top:20%; left:50%; transform:translate(-50%,-50%); background:rgba(0,0,0,0.7); color:#fff; padding:10px 20px; border-radius:20px; z-index:1000; pointer-events:none;'; document.body.appendChild(feedback); setTimeout(() => { feedback.remove(); }, 1000); }
-function triggerFlash() { if(!flashOverlay) return; flashOverlay.classList.remove('flash-active'); void flashOverlay.offsetWidth; flashOverlay.classList.add('flash-active'); setTimeout(() => { flashOverlay.classList.remove('flash-active'); }, 300); }
-function toggleTryAll() { if (!currentType) { alert("Select category!"); return; } if (autoTryRunning) stopAutoTry(); else startAutoTry(); }
-function startAutoTry() { autoTryRunning = true; autoSnapshots = []; autoTryIndex = 0; document.getElementById('tryall-btn').textContent = "STOP"; runAutoStep(); }
-function stopAutoTry() { autoTryRunning = false; clearTimeout(autoTryTimeout); document.getElementById('tryall-btn').textContent = "Try All"; if (autoSnapshots.length > 0) showGallery(); }
-async function runAutoStep() { if (!autoTryRunning) return; const assets = JEWELRY_ASSETS[currentType]; if (!assets || autoTryIndex >= assets.length) { stopAutoTry(); return; } const asset = assets[autoTryIndex]; const highResImg = await loadAsset(asset.fullSrc, asset.id); setActiveARImage(highResImg); currentAssetName = asset.name; autoTryTimeout = setTimeout(() => { triggerFlash(); captureToGallery(); autoTryIndex++; runAutoStep(); }, 1500); }
-function captureToGallery() { const tempCanvas = document.createElement('canvas'); tempCanvas.width = videoElement.videoWidth; tempCanvas.height = videoElement.videoHeight; const tempCtx = tempCanvas.getContext('2d'); if (currentCameraMode === 'environment') { tempCtx.translate(0, 0); tempCtx.scale(1, 1); } else { tempCtx.translate(tempCanvas.width, 0); tempCtx.scale(-1, 1); } tempCtx.drawImage(videoElement, 0, 0); tempCtx.setTransform(1, 0, 0, 1, 0, 0); try { tempCtx.drawImage(canvasElement, 0, 0); } catch(e) {} let cleanName = currentAssetName.replace(/\.(png|jpg|jpeg|webp)$/i, "").replace(/_/g, " "); cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1); const padding = tempCanvas.width * 0.04; const titleSize = tempCanvas.width * 0.045; const descSize = tempCanvas.width * 0.035; const contentHeight = (titleSize * 2) + descSize + padding; const gradient = tempCtx.createLinearGradient(0, tempCanvas.height - contentHeight - padding, 0, tempCanvas.height); gradient.addColorStop(0, "rgba(0,0,0,0)"); gradient.addColorStop(0.2, "rgba(0,0,0,0.8)"); gradient.addColorStop(1, "rgba(0,0,0,0.95)"); tempCtx.fillStyle = gradient; tempCtx.fillRect(0, tempCanvas.height - contentHeight - padding, tempCanvas.width, contentHeight + padding); tempCtx.font = `bold ${titleSize}px Playfair Display, serif`; tempCtx.fillStyle = "#d4af37"; tempCtx.textAlign = "left"; tempCtx.textBaseline = "top"; tempCtx.fillText("Product Description", padding, tempCanvas.height - contentHeight); tempCtx.font = `${descSize}px Montserrat, sans-serif`; tempCtx.fillStyle = "#ffffff"; tempCtx.fillText(cleanName, padding, tempCanvas.height - contentHeight + (titleSize * 1.5)); if (watermarkImg.complete) { const wWidth = tempCanvas.width * 0.25; const wHeight = (watermarkImg.height / watermarkImg.width) * wWidth; tempCtx.drawImage(watermarkImg, tempCanvas.width - wWidth - padding, padding, wWidth, wHeight); } const dataUrl = tempCanvas.toDataURL('image/png'); const safeName = "Jewels_Look"; autoSnapshots.push({ url: dataUrl, name: `${safeName}_${Date.now()}.png` }); return { url: dataUrl, name: `${safeName}_${Date.now()}.png` }; }
-function takeSnapshot() { triggerFlash(); const shotData = captureToGallery(); currentPreviewData = shotData; document.getElementById('preview-image').src = shotData.url; document.getElementById('preview-modal').style.display = 'flex'; if(concierge.hasStarted) concierge.speak("Captured perfectly!"); }
-function downloadSingleSnapshot() { if(!currentPreviewData.url) return; saveAs(currentPreviewData.url, currentPreviewData.name); }
-function downloadAllAsZip() { if (autoSnapshots.length === 0) return; const zip = new JSZip(); const folder = zip.folder("Jewels-Ai_Collection"); autoSnapshots.forEach(item => folder.file(item.name, item.url.replace(/^data:image\/(png|jpg);base64,/, ""), {base64:true})); zip.generateAsync({type:"blob"}).then(content => saveAs(content, "Jewels-Ai_Collection.zip")); }
-function shareSingleSnapshot() { if(!currentPreviewData.url) return; fetch(currentPreviewData.url).then(res => res.blob()).then(blob => { const file = new File([blob], "look.png", { type: "image/png" }); if (navigator.share) navigator.share({ files: [file] }); }); }
-function changeLightboxImage(dir) { if (autoSnapshots.length === 0) return; currentLightboxIndex = (currentLightboxIndex + dir + autoSnapshots.length) % autoSnapshots.length; document.getElementById('lightbox-image').src = autoSnapshots[currentLightboxIndex].url; }
-function showGallery() { const grid = document.getElementById('gallery-grid'); grid.innerHTML = ''; autoSnapshots.forEach((item, index) => { const card = document.createElement('div'); card.className = "gallery-card"; const img = document.createElement('img'); img.src = item.url; img.className = "gallery-img"; const overlay = document.createElement('div'); overlay.className = "gallery-overlay"; let cleanName = item.name.replace("Jewels-Ai_", "").replace(".png", "").substring(0,12); overlay.innerHTML = `<span class="overlay-text">${cleanName}</span><div class="overlay-icon">👁️</div>`; card.onclick = () => { currentLightboxIndex = index; document.getElementById('lightbox-image').src = item.url; document.getElementById('lightbox-overlay').style.display = 'flex'; }; card.appendChild(img); card.appendChild(overlay); grid.appendChild(card); }); document.getElementById('gallery-modal').style.display = 'flex'; }
-function closePreview() { document.getElementById('preview-modal').style.display = 'none'; }
-function closeGallery() { document.getElementById('gallery-modal').style.display = 'none'; }
-function closeLightbox() { document.getElementById('lightbox-overlay').style.display = 'none'; }
+window.selectJewelryType = selectJewelryType; window.toggleTryAll = toggleTryAll; window.tryDailyItem = tryDailyItem; window.closeDailyDrop = closeDailyDrop;
+window.takeSnapshot = takeSnapshot; window.downloadAllAsZip = downloadAllAsZip; window.closePreview = closePreview;
+window.downloadSingleSnapshot = downloadSingleSnapshot; window.shareSingleSnapshot = shareSingleSnapshot;
+window.changeLightboxImage = changeLightboxImage; window.toggleVoiceControl = toggleVoiceControl; window.initVoiceControl = initVoiceControl;
