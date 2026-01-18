@@ -1,4 +1,4 @@
-/* script.js - Jewels-Ai Atelier: v4.1 (Complete Enterprise Edition) */
+/* script.js - Jewels-Ai Atelier: v4.2 (Fixed Nila Voice & Full Features) */
 
 /* --- CONFIGURATION --- */
 const API_KEY = "AIzaSyAXG3iG2oQjUA_BpnO8dK8y-MHJ7HLrhyE"; 
@@ -67,55 +67,72 @@ let handSmoother = {
     bangle: { x: 0, y: 0, angle: 0, size: 0 }
 };
 
-/* --- AI CONCIERGE "NILA" ENGINE --- */
+/* --- AI CONCIERGE "NILA" ENGINE (FIXED) --- */
 const concierge = {
     synth: window.speechSynthesis,
     voice: null,
     active: true,
+    hasStarted: false, // Prevents auto-play errors
     
     init: function() {
         if (speechSynthesis.onvoiceschanged !== undefined) {
             speechSynthesis.onvoiceschanged = this.setVoice;
         }
         this.setVoice();
-        setTimeout(() => this.speak("Namaste! I am Nila. Pick a style to begin!"), 2000);
+        
+        // Show visual cue only, don't speak yet
+        setTimeout(() => {
+            const bubble = document.getElementById('ai-bubble');
+            if(bubble) {
+                bubble.innerText = "Tap me to start Voice AI";
+                bubble.classList.add('bubble-visible');
+            }
+        }, 1000);
     },
 
     setVoice: function() {
         const voices = window.speechSynthesis.getVoices();
-        // Priority: Female English/Indian voice -> Google US English -> Default
-        concierge.voice = voices.find(v => v.name.includes("Female") || v.name.includes("Google US English") || v.lang.includes("en-IN")) || voices[0];
+        concierge.voice = voices.find(v => v.name.includes("Google US English") || v.name.includes("Female")) || voices[0];
     },
 
     speak: function(text) {
         if (!this.active || !this.synth) return;
         
-        this.synth.cancel(); // Stop any previous speech
-        
-        // Update UI
+        // Visuals (Always work)
         const bubble = document.getElementById('ai-bubble');
         const avatar = document.getElementById('ai-avatar');
-        if(bubble) {
-            bubble.innerText = text;
-            bubble.classList.add('bubble-visible');
-        }
+        if(bubble) { bubble.innerText = text; bubble.classList.add('bubble-visible'); }
         if(avatar) avatar.classList.add('talking');
 
-        // Speak
-        const utter = new SpeechSynthesisUtterance(text);
-        utter.voice = this.voice;
-        utter.rate = 1.0;
-        utter.pitch = 1.1;
-        
-        utter.onend = () => {
-            if(bubble) setTimeout(() => bubble.classList.remove('bubble-visible'), 2000);
-            if(avatar) avatar.classList.remove('talking');
-        };
-
-        this.synth.speak(utter);
+        // Audio (Only works after user interaction)
+        if (this.hasStarted) {
+            this.synth.cancel();
+            const utter = new SpeechSynthesisUtterance(text);
+            utter.voice = this.voice;
+            utter.rate = 1.0; 
+            utter.pitch = 1.1;
+            utter.onend = () => {
+                if(bubble) setTimeout(() => bubble.classList.remove('bubble-visible'), 2000);
+                if(avatar) avatar.classList.remove('talking');
+            };
+            this.synth.speak(utter);
+        } else {
+            // If sound blocked, stop animation after 3s
+            setTimeout(() => {
+                 if(avatar) avatar.classList.remove('talking');
+                 if(bubble) bubble.classList.remove('bubble-visible');
+            }, 3000);
+        }
     },
 
     toggle: function() {
+        // First click unlocks audio
+        if (!this.hasStarted) {
+            this.hasStarted = true;
+            this.speak("Namaste! I am Nila. I am now active. Select a jewelry category.");
+            return;
+        }
+
         this.active = !this.active;
         if(this.active) this.speak("I am listening.");
         else { 
@@ -165,20 +182,16 @@ function tryDailyItem() {
 
 /* --- 2. PHYSICS ENGINE (JHUMKA SWING) --- */
 function updatePhysics(headTilt, headX, width) {
-    // Gravity
     const gravityTarget = -headTilt; 
     physics.earringVelocity += (gravityTarget - physics.earringAngle) * 0.1; 
     physics.earringVelocity *= 0.92; 
     physics.earringAngle += physics.earringVelocity;
 
-    // Inertia (Swing)
     const headSpeed = (headX - physics.lastHeadX); 
     physics.lastHeadX = headX;
 
     physics.swayOffset += headSpeed * -1.5; 
     physics.swayOffset *= 0.85; 
-    
-    // Clamp to prevent spinning
     if (physics.swayOffset > 0.5) physics.swayOffset = 0.5;
     if (physics.swayOffset < -0.5) physics.swayOffset = -0.5;
 }
@@ -259,10 +272,11 @@ async function selectJewelryType(type) {
   if (currentType === type) return;
   currentType = type;
   
-  // Nila's Commentary
-  if(type === 'earrings') concierge.speak("Earrings mode. Turn your head to see them swing.");
-  else if(type === 'chains') concierge.speak("Necklace mode. This looks elegant.");
-  else if(type === 'rings') concierge.speak("Ring mode. Show me your hand.");
+  if(concierge.hasStarted) {
+      if(type === 'earrings') concierge.speak("Earrings mode. Turn your head to see them swing.");
+      else if(type === 'chains') concierge.speak("Necklace mode. This looks elegant.");
+      else if(type === 'rings') concierge.speak("Ring mode. Show me your hand.");
+  }
   
   const targetMode = (type === 'rings' || type === 'bangles') ? 'environment' : 'user';
   startCameraFast(targetMode); 
@@ -330,7 +344,7 @@ async function detectLoop() {
     requestAnimationFrame(detectLoop);
 }
 
-/* --- 8. MEDIAPIPE FACE (OCCLUSION & SHADOWS) --- */
+/* --- 8. MEDIAPIPE FACE --- */
 const faceMesh = new FaceMesh({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}` });
 faceMesh.setOptions({ refineLandmarks: true, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 
@@ -366,7 +380,7 @@ faceMesh.onResults((results) => {
       const xShift = ew * 0.05; 
       const totalAngle = physics.earringAngle + (physics.swayOffset * 0.5);
 
-      // Soft Shadows (Sub-surface Scattering)
+      // Soft Shadows
       canvasCtx.shadowColor = "rgba(0,0,0,0.5)"; 
       canvasCtx.shadowBlur = 15; 
       canvasCtx.shadowOffsetX = 2; 
@@ -391,7 +405,7 @@ faceMesh.onResults((results) => {
   canvasCtx.restore();
 });
 
-/* --- 9. MEDIAPIPE HANDS (GESTURES & RINGS) --- */
+/* --- 9. MEDIAPIPE HANDS --- */
 const hands = new Hands({ locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}` });
 hands.setOptions({ maxNumHands: 1, modelComplexity: 1, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
 function calculateAngle(p1, p2) { return Math.atan2(p2.y - p1.y, p2.x - p1.x); }
@@ -400,7 +414,7 @@ hands.onResults((results) => {
   const w = videoElement.videoWidth; 
   const h = videoElement.videoHeight;
   
-  // 1. GLOBAL GESTURE TRACKING (WORKS IN ALL MODES)
+  // 1. GLOBAL GESTURE TRACKING
   if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
       const lm = results.multiHandLandmarks[0];
       const indexTipX = lm[8].x; 
@@ -422,7 +436,7 @@ hands.onResults((results) => {
       handSmoother.active = false; 
   }
 
-  // 2. VISUAL DRAWING (RESTRICTED TO RING/BANGLE MODE)
+  // 2. VISUAL DRAWING
   if (currentType !== 'rings' && currentType !== 'bangles') return;
 
   canvasElement.width = w; canvasElement.height = h;
@@ -488,7 +502,7 @@ window.changeLightboxImage = changeLightboxImage;
 window.toggleVoiceControl = toggleVoiceControl;
 window.initVoiceControl = initVoiceControl;
 
-// Voice, Flash, & Helper Functions
+// Helper Functions
 function initVoiceControl() {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) { if(voiceBtn) voiceBtn.style.display = 'none'; return; }
@@ -507,7 +521,7 @@ function startAutoTry() { autoTryRunning = true; autoSnapshots = []; autoTryInde
 function stopAutoTry() { autoTryRunning = false; clearTimeout(autoTryTimeout); document.getElementById('tryall-btn').textContent = "Try All"; if (autoSnapshots.length > 0) showGallery(); }
 async function runAutoStep() { if (!autoTryRunning) return; const assets = JEWELRY_ASSETS[currentType]; if (!assets || autoTryIndex >= assets.length) { stopAutoTry(); return; } const asset = assets[autoTryIndex]; const highResImg = await loadAsset(asset.fullSrc, asset.id); setActiveARImage(highResImg); currentAssetName = asset.name; autoTryTimeout = setTimeout(() => { triggerFlash(); captureToGallery(); autoTryIndex++; runAutoStep(); }, 1500); }
 function captureToGallery() { const tempCanvas = document.createElement('canvas'); tempCanvas.width = videoElement.videoWidth; tempCanvas.height = videoElement.videoHeight; const tempCtx = tempCanvas.getContext('2d'); if (currentCameraMode === 'environment') { tempCtx.translate(0, 0); tempCtx.scale(1, 1); } else { tempCtx.translate(tempCanvas.width, 0); tempCtx.scale(-1, 1); } tempCtx.drawImage(videoElement, 0, 0); tempCtx.setTransform(1, 0, 0, 1, 0, 0); try { tempCtx.drawImage(canvasElement, 0, 0); } catch(e) {} let cleanName = currentAssetName.replace(/\.(png|jpg|jpeg|webp)$/i, "").replace(/_/g, " "); cleanName = cleanName.charAt(0).toUpperCase() + cleanName.slice(1); const padding = tempCanvas.width * 0.04; const titleSize = tempCanvas.width * 0.045; const descSize = tempCanvas.width * 0.035; const contentHeight = (titleSize * 2) + descSize + padding; const gradient = tempCtx.createLinearGradient(0, tempCanvas.height - contentHeight - padding, 0, tempCanvas.height); gradient.addColorStop(0, "rgba(0,0,0,0)"); gradient.addColorStop(0.2, "rgba(0,0,0,0.8)"); gradient.addColorStop(1, "rgba(0,0,0,0.95)"); tempCtx.fillStyle = gradient; tempCtx.fillRect(0, tempCanvas.height - contentHeight - padding, tempCanvas.width, contentHeight + padding); tempCtx.font = `bold ${titleSize}px Playfair Display, serif`; tempCtx.fillStyle = "#d4af37"; tempCtx.textAlign = "left"; tempCtx.textBaseline = "top"; tempCtx.fillText("Product Description", padding, tempCanvas.height - contentHeight); tempCtx.font = `${descSize}px Montserrat, sans-serif`; tempCtx.fillStyle = "#ffffff"; tempCtx.fillText(cleanName, padding, tempCanvas.height - contentHeight + (titleSize * 1.5)); if (watermarkImg.complete) { const wWidth = tempCanvas.width * 0.25; const wHeight = (watermarkImg.height / watermarkImg.width) * wWidth; tempCtx.drawImage(watermarkImg, tempCanvas.width - wWidth - padding, padding, wWidth, wHeight); } const dataUrl = tempCanvas.toDataURL('image/png'); const safeName = "Jewels_Look"; autoSnapshots.push({ url: dataUrl, name: `${safeName}_${Date.now()}.png` }); return { url: dataUrl, name: `${safeName}_${Date.now()}.png` }; }
-function takeSnapshot() { triggerFlash(); const shotData = captureToGallery(); currentPreviewData = shotData; document.getElementById('preview-image').src = shotData.url; document.getElementById('preview-modal').style.display = 'flex'; concierge.speak("Captured perfectly!"); }
+function takeSnapshot() { triggerFlash(); const shotData = captureToGallery(); currentPreviewData = shotData; document.getElementById('preview-image').src = shotData.url; document.getElementById('preview-modal').style.display = 'flex'; if(concierge.hasStarted) concierge.speak("Captured perfectly!"); }
 function downloadSingleSnapshot() { if(!currentPreviewData.url) return; saveAs(currentPreviewData.url, currentPreviewData.name); }
 function downloadAllAsZip() { if (autoSnapshots.length === 0) return; const zip = new JSZip(); const folder = zip.folder("Jewels-Ai_Collection"); autoSnapshots.forEach(item => folder.file(item.name, item.url.replace(/^data:image\/(png|jpg);base64,/, ""), {base64:true})); zip.generateAsync({type:"blob"}).then(content => saveAs(content, "Jewels-Ai_Collection.zip")); }
 function shareSingleSnapshot() { if(!currentPreviewData.url) return; fetch(currentPreviewData.url).then(res => res.blob()).then(blob => { const file = new File([blob], "look.png", { type: "image/png" }); if (navigator.share) navigator.share({ files: [file] }); }); }
